@@ -29,9 +29,11 @@ class ParimaryModule(nn.Module):
         self.ParimaryModule = nn.Sequential(
                                             OrderedDict(
                                                         [
+                                                         ('ParimaryBN',nn.BatchNorm2d(in_channels)),
                                                          ('ParimaryConv',conv3x3(in_channels,out_channels,2,1,True,1)),
-                                                         ('ParimaryBN',nn.BatchNorm2d(out_channels)),
-                                                         ('ParimaryMaxPool',nn.MaxPool2d(kernel_size=3,stride=2,padding=1))
+                                                         ('ParimaryConvBN',nn.BatchNorm2d(out_channels)),
+                                                         ('ParimaryConvReLU',nn.ReLU()),
+                                                         ('ParimaryMaxPool',nn.MaxPool2d(kernel_size=3,stride=2,padding=0,ceil_mode=True))
                                                         ]
                                                         )
                                             )
@@ -179,6 +181,11 @@ class ShuffleNetV2(nn.Module):
         
         self.FinalModule = FinalModule(self.out_channels[3],self.out_channels[4],num_classes)
         
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                init.kaiming_uniform_(m.weight)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
     def Stage(self,stage=1,BlockRepeat=[1,3]):
         modules = OrderedDict()
         name = 'ShuffleNetV2Stage{}'.format(stage)
@@ -195,15 +202,11 @@ class ShuffleNetV2(nn.Module):
     
     def forward(self,x):
         x = self.ParimaryModule(x)
-        print(x.shape)
         x = self.Stage1(x)
-        print(x.shape)
         x = self.Stage2(x)
-        print(x.shape)
         x = self.Stage3(x)
-        print(x.shape)
         x = self.FinalModule(x)
-        print(x.shape)
+        x = x.view(x.size(0),x.size(1))
         return x
         
         
