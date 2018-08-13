@@ -12,7 +12,6 @@ import Config
 
 import os
 import shutil
-import time
 
 useGPU = Config.useGPU
 
@@ -39,7 +38,7 @@ def Main():
 
     model,loss_fn,optimizer = EnvironmentSetup(model)
     
-    model,optimizer = LoadParameters(model,optimizer,PretrainModelPath,False)
+    model,optimizer = LoadParameters(model,optimizer,PretrainModelPath)
     
     train_loader,train_sample = DataLoader(mode='Train')
     val_loader,val_sample = DataLoader(mode='Val')
@@ -52,35 +51,32 @@ def Main():
         _ = validate_or_test(test_loader,model,loss_fn)
         return
     else:
-        pass
-    
-    for epoch in range(StartEpoch,Epoch):
-        if useDistributed:
-            train_sample.set_epoch(epoch)
-        adjust_learning_rate(optimizer,epoch)
-        
-        train(train_loader,model,loss_fn,optimizer,epoch)
-        
-        top1 = validate_or_test(val_loader,model,loss_fn)
-        
-        SaveParameters(model,optimizer,epoch,top1)
+        for epoch in range(StartEpoch,Epoch):
+            if useDistributed:
+                train_sample.set_epoch(epoch)
+            adjust_learning_rate(optimizer,epoch)
+            
+            train(train_loader,model,loss_fn,optimizer,epoch)
+            
+            top1 = validate_or_test(val_loader,model,loss_fn)
+            
+            SaveParameters(model,optimizer,epoch,top1)
 
 def train(train_loader,model,loss_fn,optimizer,epoch):
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
 
     model.train()
 
-    end = time.time()
     for i, (input, target) in enumerate(train_loader):
-        data_time.update(time.time() - end)
-
-        if useGPU:
-            input = input.cuda(useGPU, non_blocking=True)
-            target = target.cuda(useGPU, non_blocking=True)
+        if (useGPU or useGPU==0) and torch.cuda.is_available():
+            if isinstance(useGPU,list):
+                input = input.cuda(useGPU[-1], non_blocking=True)
+                target = target.cuda(useGPU[-1], non_blocking=True)
+            else:
+                input = input.cuda(useGPU, non_blocking=True)
+                target = target.cuda(useGPU, non_blocking=True)
 
         output = model(input)
         loss = loss_fn(output, target)
@@ -93,9 +89,6 @@ def train(train_loader,model,loss_fn,optimizer,epoch):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
-        batch_time.update(time.time() - end)
-        end = time.time()
 
         if i % PrintFreq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
@@ -112,12 +105,15 @@ def validate_or_test(loader, model, loss_fn):
     model.eval()
 
     with torch.no_grad():
-        end = time.time()
         for i, (input, target) in enumerate(loader):
             
-            if useGPU:
-                input = input.cuda(useGPU, non_blocking=True)
-                target = target.cuda(useGPU, non_blocking=True)
+            if (useGPU or useGPU==0) and torch.cuda.is_available():
+                if isinstance(useGPU,list):
+                    input = input.cuda(useGPU[-1], non_blocking=True)
+                    target = target.cuda(useGPU[-1], non_blocking=True)
+                else:
+                    input = input.cuda(useGPU, non_blocking=True)
+                    target = target.cuda(useGPU, non_blocking=True)
 
             output = model(input)
             loss = loss_fn(output, target)
@@ -126,10 +122,7 @@ def validate_or_test(loader, model, loss_fn):
             losses.update(loss.item(), input.size(0))
             top1.update(prec1[0], input.size(0))
             top5.update(prec5[0], input.size(0))
-
-            batch_time.update(time.time() - end)
-            end = time.time()
-
+            
             if i % PrintFreq == 0:
                 print('Test: [{0}/{1}]\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
@@ -141,69 +134,55 @@ def validate_or_test(loader, model, loss_fn):
               .format(top1=top1, top5=top5))
 
     return top1.avg
-def LoadParameters(model,optimizer,path,GPUModel=True):
+def LoadParameters(model,optimizer,path):
     if not os.path.exists(path):
-        raise ValueError('pretrain model file is not exists...')
+        print('pretrain model file is not exists...')
+        return model,optimizer
     else:
         pass
     
     net_dict = model.state_dict()
     optimizer_dict = optimizer.state_dict()
     
-    if GPUModel:
-        pretrain = torch.load(path, map_location=lambda storage, loc: storage)
-
-        for k, v in pretrain.items():
-            try:
-                #All model parameters
-                if k=='state_dict':
-                    for keys in v:
-                        net_dict.update( { keys[7:]:v[keys] } )
-                    print('load net state_dict')
-                elif k=='Epoch':
-                    StartEpoch = v
-                    print('load Epoch')
-                elif k=='BestScore':
-                    BestScore = v
-                    print('load BestScore')
-                elif k=='optimizer':
-                    for keys in v:
-                        optimizer_dict.update( { keys[7:]:v[keys] } )
-                    print('load optimizer state_dict')
-                else:
-                    raise ValueError('should load state_dict')
-            except:
-                #Only net state_dict
-                net_dict.update( { k[7:]:v } )
-    else:
-        pretrain = torch.load(path)
-        
-        for k, v in pretrain.items():
-            try:
-                #All model parameters
-                if k=='state_dict':
-                    for keys in v:
-                        net_dict.update( { keys:v[keys] } )
-                    print('load state_dict')
-                elif k=='Epoch':
-                    StartEpoch = v
-                    print('load Epoch')
-                elif k=='BestScore':
-                    BestScore = v
-                    print('load BestScore')
-                elif k=='optimizer':
-                    for keys in v:
-                        optimizer_dict.update( { keys:v[keys] } )
-                    print('load optimizer')
-                else:
-                    raise ValueError('should load state_dict')
-            except:
-                #Only net state_dict
-                net_dict.update( { k:v } )
+    global StartEpoch
+    global BestScore
     
+    try:
+        pretrain = torch.load(path)
+    except:
+        pretrain = torch.load(path, map_location=lambda storage, loc: storage)
+    
+    for k, v in pretrain.items():
+        try:
+            #All model parameters
+            if k=='state_dict':
+                for keys in v:
+                    net_dict.update( { keys:v[keys] } )
+                print('load state_dict')
+            elif k=='Epoch':
+                StartEpoch = v
+                print('load Epoch')
+            elif k=='BestScore':
+                BestScore = v
+                print('load BestScore')
+            elif k=='optimizer':
+                for keys in v:
+                    optimizer_dict.update( { keys:v[keys] } )
+                print('load optimizer')
+            else:
+                raise ValueError('should load state_dict')
+        except:
+            #Only net state_dict
+            net_dict.update( { k:v } )
+    
+    model.load_state_dict(net_dict)
+    optimizer.load_state_dict(optimizer_dict)
     return model,optimizer
 def SaveParameters(model,optimizer,epoch,score,path=os.path.join(ModelPath,'checkpoint.pth'),only_save_state_dict=False):
-    is_best = score>BestScore
+    try:
+        is_best = score.cpu()>BestScore.cpu()
+    except:
+        is_best = score>BestScore
     
     if only_save_state_dict:
         torch.save(model.state_dict(),path)
@@ -220,14 +199,14 @@ def SaveParameters(model,optimizer,epoch,score,path=os.path.join(ModelPath,'chec
         print('save new best model')
         shutil.copyfile(path, os.path.join(ModelPath,'model_best.pth'))
 def EnvironmentSetup(model):
-    if useGPU:
-        if isinstance(useGPU,list or tuple):
+    if (useGPU or useGPU==0) and torch.cuda.is_available():
+        if isinstance(useGPU,list):
             print('use DataParallel by GPU {}'.format(useGPU))
-            model = torch.nn.DataParallel(model).cuda()
-            loss_fn = nn.CrossEntropyLoss().cuda()
+            model = torch.nn.DataParallel(model.cuda(useGPU[-1]),device_ids=useGPU)
+            loss_fn = nn.CrossEntropyLoss().cuda(useGPU[-1])
         else:
             print('use GPU {}'.format(useGPU))
-            model = model.cuda(GPU)
+            model = model.cuda(useGPU)
             loss_fn = nn.CrossEntropyLoss().cuda(useGPU)
     elif useDistributed:
         print('use Distributed')
