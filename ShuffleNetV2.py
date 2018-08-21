@@ -38,11 +38,6 @@ class ParimaryModule(nn.Module):
                                                         )
                                             )
         
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                init.kaiming_uniform_(m.weight)
-                if m.bias is not None:
-                    init.constant_(m.bias, 0)
     def forward(self,x):
         x = self.ParimaryModule(x)
         return x
@@ -66,16 +61,12 @@ class FinalModule(nn.Module):
         self.FC = nn.Sequential(
                                 OrderedDict(
                                             [
+                                             ('Dropout',nn.Dropout(0.5)),
                                              ('FC',conv1x1(out_channels,num_classes,True,1))
                                             ]
                                             )
                                 )
         
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                init.kaiming_uniform_(m.weight)
-                if m.bias is not None:
-                    init.constant_(m.bias, 0)
     def forward(self,x):
         x = self.FinalConv(x)
         x = F.avg_pool2d(x, x.data.size()[-2:])
@@ -135,11 +126,6 @@ class ShuffleNetV2Block(nn.Module):
         else:
             raise ValueError('stride must be 1 or 2')
         
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                init.kaiming_uniform_(m.weight)
-                if m.bias is not None:
-                    init.constant_(m.bias, 0)
     def forward(self,x):
         if self.stride==2:
             x_left,x_right = x,x
@@ -185,7 +171,10 @@ class ShuffleNetV2(nn.Module):
             if isinstance(m, nn.Conv2d):
                 init.kaiming_uniform_(m.weight)
                 if m.bias is not None:
-                    init.constant_(m.bias, 0)
+                    init.constant_(m.bias, 0.0)
+            elif isinstance(m, nn.BatchNorm2d):
+                init.constant_(m.weight, 1.0)
+                init.constant_(m.bias, 0.0)
     def Stage(self,stage=1,BlockRepeat=[1,3]):
         modules = OrderedDict()
         name = 'ShuffleNetV2Stage{}'.format(stage)

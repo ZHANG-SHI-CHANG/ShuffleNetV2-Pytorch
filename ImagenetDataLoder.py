@@ -79,5 +79,4 @@ def DataLoader(mode='Train'):
 if __name__=='__main__':
     dataloader,sampler = DataLoader(mode='Test')
     for i,(input,target) in enumerate(dataloader):
-        print(input.shape)
-        print(target)
+        print(torch.max(input))

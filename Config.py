@@ -28,4 +28,4 @@ WeightDecay = 1e-4
 ModelPath = os.path.join(root,'model_store')
 PretrainModelPath = os.path.join(ModelPath,'model_best.pth')
 PrintFreq = 10
-Mode = 'Train'#'Train','Val','Test'
+Mode = 'Test'#'Train','Val','Test'

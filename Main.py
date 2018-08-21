@@ -34,7 +34,7 @@ Mode = Config.Mode
 
 def Main():
 
-    model = Model(in_channels=3,num_classes=1000,net_scale=1.0)
+    model = Model(in_channels=3,num_classes=18,net_scale=1.0)
 
     model,loss_fn,optimizer = EnvironmentSetup(model)
     
@@ -179,6 +179,7 @@ def LoadParameters(model,optimizer,path):
     optimizer.load_state_dict(optimizer_dict)
     return model,optimizer
 def SaveParameters(model,optimizer,epoch,score,path=os.path.join(ModelPath,'checkpoint.pth'),only_save_state_dict=False):
+    global BestScore
     try:
         is_best = score.cpu()>BestScore.cpu()
     except:
@@ -196,6 +197,7 @@ def SaveParameters(model,optimizer,epoch,score,path=os.path.join(ModelPath,'chec
         torch.save(state,path)
     
     if is_best:
+        BestScore = score
         print('save new best model')
         shutil.copyfile(path, os.path.join(ModelPath,'model_best.pth'))
 def EnvironmentSetup(model):
